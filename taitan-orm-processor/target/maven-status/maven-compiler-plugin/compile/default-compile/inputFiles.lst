@@ -1,0 +1,14 @@
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/logic/And.java
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/logic/Not.java
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/logic/FieldExpr.java
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/Column.java
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/Id.java
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/UpdateField.java
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/logic/Or.java
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/Entity.java
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/SqlFragment.java
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/OrmProcessor.java
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/logic/Expr.java
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/Executor.java
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/DataSourceProvider.java
+/Users/wangwei/project/java/taitan-orm-java/taitan-orm-processor/src/main/java/com/lvonce/taitan/logic/Cmp.java
