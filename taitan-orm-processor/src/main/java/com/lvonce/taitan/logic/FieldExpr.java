@@ -2,13 +2,13 @@ package com.lvonce.taitan.logic;
 
 import com.lvonce.taitan.SqlFragment;
 
-public interface FieldExpr {
+public interface FieldExpr<T> {
     String name();
-    Expr<?> expr();
+    Expr<T> expr();
     default Cmp cmp() {
         return expr().cmp();
     }
-    default Object value() {
+    default T value() {
         return expr().val();
     }
     default SqlFragment toSql() {
@@ -18,7 +18,7 @@ public interface FieldExpr {
         if (!fragment.hasParam()) {
             return new SqlFragment(field + " " + fragment.sql(), false, null);
         } else {
-            return new SqlFragment(field + " " + fragment.sql(), true, fragment.param());
+            return new SqlFragment(field + " " + fragment.sql(), true, fragment.params());
         }
     }
 }

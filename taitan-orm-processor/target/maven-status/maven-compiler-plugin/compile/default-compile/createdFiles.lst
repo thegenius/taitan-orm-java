@@ -1,5 +1,5 @@
 com/lvonce/taitan/SqlFragment.class
-com/lvonce/taitan/UpdateField.class
+com/lvonce/taitan/Field.class
 com/lvonce/taitan/Executor.class
 com/lvonce/taitan/Column.class
 com/lvonce/taitan/logic/Expr$1.class
@@ -7,13 +7,13 @@ com/lvonce/taitan/DataSourceProvider.class
 com/lvonce/taitan/logic/Expr.class
 com/lvonce/taitan/Id.class
 com/lvonce/taitan/logic/Cmp.class
-com/lvonce/taitan/logic/Or.class
+com/lvonce/taitan/Field$State.class
+com/lvonce/taitan/logic/LogicNot.class
 com/lvonce/taitan/OrmProcessor.class
-com/lvonce/taitan/UpdateField$State.class
 com/lvonce/taitan/logic/FieldExpr.class
-com/lvonce/taitan/logic/And.class
+com/lvonce/taitan/logic/LogicOr.class
+com/lvonce/taitan/logic/LogicAnd.class
 META-INF/services/javax.annotation.processing.Processor
-com/lvonce/taitan/logic/Not.class
 com/lvonce/taitan/Executor$ResultSetMapper.class
 com/lvonce/taitan/OrmProcessor$FieldInfo.class
 com/lvonce/taitan/Entity.class

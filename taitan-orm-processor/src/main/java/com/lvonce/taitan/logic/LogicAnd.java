@@ -1,44 +1,41 @@
 package com.lvonce.taitan.logic;
 
 import com.lvonce.taitan.SqlFragment;
-import com.lvonce.taitan.logic.Expr;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public record And(List<FieldExpr> exprs) implements FieldExpr {
-    public And(FieldExpr... exprs) {
-        this(List.of(exprs));
-    }
+@SuppressWarnings("rawtypes")
+public interface LogicAnd extends FieldExpr {
+//    public LogicAnd(FieldExpr... exprs) {
+//        this(List.of(exprs));
+//    }
+    FieldExpr<?>[] fieldExprs();
 
-    @Override
-    public String name() {
+    default String name() {
         throw new UnsupportedOperationException("And expressions has no name");
     }
 
-    @Override
-    public Expr<?> expr() {
+    default Expr<?> expr() {
         throw new UnsupportedOperationException("And expressions don't have a single expr");
-
     }
 
-    public SqlFragment toSql() {
+    default SqlFragment toSql() {
         StringBuilder sb = new StringBuilder();
         sb.append("(");
-
         List<Object> params = new ArrayList<>();
-
-        for (int i = 0; i < exprs.size(); i++) {
+        FieldExpr<?>[] exprArray = fieldExprs();
+        for (int i = 0; i < exprArray.length; i++) {
             if (i > 0) sb.append(" AND ");
-            SqlFragment fragment = exprs.get(i).toSql();
+            SqlFragment fragment = exprArray[i].toSql();
             sb.append(fragment.sql());
             if (fragment.hasParam()) {
-                params.add(fragment.param());
+                params.addAll(fragment.params());
             }
         }
 
         sb.append(")");
-        return new SqlFragment(sb.toString(), !params.isEmpty(), params.toArray());
+        return new SqlFragment(sb.toString(), !params.isEmpty(), params);
     }
 
 

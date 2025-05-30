@@ -3,6 +3,7 @@ package com.lvonce.taitan.logic;
 
 import com.lvonce.taitan.SqlFragment;
 
+import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
@@ -35,7 +36,7 @@ public record Expr<T>(
                         .map(e -> "?")
                         .collect(Collectors.joining(", "));
                 sql = "IN (" + placeholders + ")";
-                return new SqlFragment(sql, true, val);
+                return new SqlFragment(sql, true, List.of(val));
 
             case BETWEEN:
                 // 假设 val 是一个包含两个元素的数组或自定义区间对象
@@ -43,12 +44,12 @@ public record Expr<T>(
                     throw new IllegalArgumentException("BETWEEN requires two values");
                 }
                 sql = "BETWEEN ? AND ?";
-                return new SqlFragment(sql, true, val);
+                return new SqlFragment(sql, true, List.of(val));
 
             default:
                 // 普通操作符：=、>、LIKE 等
                 sql += " ?";
-                return new SqlFragment(sql, true, val);
+                return new SqlFragment(sql, true, List.of(val));
         }
     }
 }

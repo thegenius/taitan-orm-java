@@ -218,19 +218,18 @@ public class OrmProcessor extends AbstractProcessor {
             if (field.isId) continue; // 跳过主键字段
 
             String fieldName = field.field.getSimpleName().toString();
-            String getter = "get" + capitalize(fieldName);
             String columnName = convertToSnakeCase(field.columnName);
 
             // 判断是否忽略字段
-            CodeBlock ignoreCheck = CodeBlock.of("mutation.$L().isIgnore()", getter);
-            CodeBlock isNullCheck = CodeBlock.of("mutation.$L().isNull()", getter);
-            CodeBlock valueCheck = CodeBlock.of("mutation.$L().getValue()", getter);
+            CodeBlock ignoreCheck = CodeBlock.of("mutation.$L().isIgnore()", fieldName);
+            CodeBlock isNullCheck = CodeBlock.of("mutation.$L().isEmpty()", fieldName);
+            CodeBlock valueCheck = CodeBlock.of("mutation.$L().getValue()", fieldName);
 
             // 添加到 SET 子句
-            setClauseBuilder.beginControlFlow("if (!mutation.$L().isIgnore())", getter)
-                .beginControlFlow("if (!mutation.$L().isNull())", getter)
+            setClauseBuilder.beginControlFlow("if (!mutation.$L().isIgnore())", fieldName)
+                .beginControlFlow("if (!mutation.$L().isEmpty())", fieldName)
                 .addStatement("setClause.append($S)", columnName + " = ?")
-                .addStatement("params.add(mutation.$L().getValue())", getter)
+                .addStatement("params.add(mutation.$L().getValue())", fieldName)
                 .endControlFlow()
                 .beginControlFlow("else")
                 .addStatement("setClause.append($S)", columnName + " = NULL")
@@ -243,16 +242,18 @@ public class OrmProcessor extends AbstractProcessor {
         params.add(pkParam);
 
         ClassName arrayListClass = ClassName.get("java.util", "ArrayList");
-//        ClassName listClass = ClassName.get("java.util", "List");
         // 构建完整方法
         MethodSpec.Builder method = MethodSpec.methodBuilder("update")
             .addModifiers(Modifier.PUBLIC)
             .returns(long.class)
             .addParameter(ClassName.get(processingEnv.getElementUtils().getPackageOf(entity).toString(), entity.getSimpleName() + "Mutation"), "mutation")
+            .addParameter(ClassName.get(processingEnv.getElementUtils().getPackageOf(entity).toString(), entity.getSimpleName() + "Exprs"), "location") // 新增 location 参数
             .addStatement("StringBuilder setClause = new StringBuilder()")
             .addStatement("$L<Object> params = new $L<>()", arrayListClass, arrayListClass)
             .addCode(setClauseBuilder.build())
-            .addStatement("String sql = $S + setClause.toString() + $S", "UPDATE " + tableName + " SET ", " WHERE " + pkColumnName + " = ?")
+            .addStatement("com.lvonce.taitan.SqlFragment whereFragment = location.toSql()")
+            .addStatement("params.addAll(whereFragment.params())") // 新增：将 whereFragment 的参数添加到 params 中
+            .addStatement("String sql = $S + setClause.toString() + $S + whereFragment.sql()", "UPDATE " + tableName + " SET ", " WHERE ")
             .addStatement("return executeUpdate(sql, params.toArray())");
 
         return method.build();
@@ -313,49 +314,78 @@ public class OrmProcessor extends AbstractProcessor {
             }
         }
 
-
         // 使用 JavaPoet 生成 Mutation 类
-        TypeSpec.Builder mutation = TypeSpec.classBuilder(mutationName)
+        TypeSpec.Builder mutation = TypeSpec.recordBuilder(mutationName) // 修改为 recordBuilder
                 .addModifiers(Modifier.PUBLIC);
 
-        // 为每个字段生成 UpdateField<T> 类型的字段
+        // 为每个字段生成 Field<T> 类型的字段
+        MethodSpec.Builder recordConstructorBuilder = MethodSpec.constructorBuilder();
         for (FieldInfo field : fields) {
             TypeName fieldType = ParameterizedTypeName.get(
-                    ClassName.get("com.lvonce.taitan", "UpdateField"),
+                    ClassName.get("com.lvonce.taitan", "Field"),
                     boxIfPrimitive(TypeName.get(field.field.asType())) // 确保调用 boxIfPrimitive 方法处理原始类型
             );
-            mutation.addField(fieldType, field.field.getSimpleName().toString(), Modifier.PRIVATE);
+            recordConstructorBuilder.addParameter(fieldType, field.field.getSimpleName().toString()); // 添加 final 修饰符
+        }
+        mutation.recordConstructor(recordConstructorBuilder.build());
+
+        // 新增：生成 Builder 类
+        TypeSpec.Builder builder = TypeSpec.classBuilder("Builder")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC);
+
+        // 为每个字段生成私有成员变量
+        for (FieldInfo field : fields) {
+            TypeName fieldType = ParameterizedTypeName.get(
+                    ClassName.get("com.lvonce.taitan", "Field"),
+                    boxIfPrimitive(TypeName.get(field.field.asType()))
+            );
+            builder.addField(fieldType, field.field.getSimpleName().toString(), Modifier.PRIVATE);
         }
 
-//        throw new RuntimeException("generateMutation2");
-//
-        // 生成无参构造函数
-        mutation.addMethod(MethodSpec.constructorBuilder()
+        // 为每个字段生成 Setter 方法
+        for (FieldInfo field : fields) {
+            TypeName fieldType = ParameterizedTypeName.get(
+                    ClassName.get("com.lvonce.taitan", "Field"),
+                    boxIfPrimitive(TypeName.get(field.field.asType()))
+            );
+            builder.addMethod(MethodSpec.methodBuilder(field.field.getSimpleName().toString())
+                    .addModifiers(Modifier.PUBLIC)
+                    .returns(ClassName.get("", "Builder"))
+                    .addParameter(fieldType, field.field.getSimpleName().toString())
+                    .addStatement("this.$L = $L", field.field.getSimpleName().toString(), field.field.getSimpleName().toString())
+                    .addStatement("return this")
+                    .build());
+        }
+
+        // 生成 build 方法
+        CodeBlock.Builder buildMethodBody = CodeBlock.builder();
+        buildMethodBody.add("return new $T(", ClassName.get(packageName, mutationName));
+        for (int i = 0; i < fields.size(); i++) {
+            FieldInfo field = fields.get(i);
+            buildMethodBody.add("$L != null ? $L : $T.ignore()", 
+                    field.field.getSimpleName().toString(),
+                    field.field.getSimpleName().toString(), 
+                    ClassName.get("com.lvonce.taitan", "Field"));
+            if (i < fields.size() - 1) { // 如果不是最后一个字段，则添加逗号
+                buildMethodBody.add(", ");
+            }
+        }
+        buildMethodBody.add(");");
+        builder.addMethod(MethodSpec.methodBuilder("build")
                 .addModifiers(Modifier.PUBLIC)
+                .returns(ClassName.get(packageName, mutationName))
+                .addCode(buildMethodBody.build())
                 .build());
 
-        // 为每个字段生成 getter 和 setter 方法
-        for (FieldInfo field : fields) {
-            String fieldName = field.field.getSimpleName().toString();
-            TypeName fieldType = ParameterizedTypeName.get(
-                    ClassName.get("com.lvonce.taitan", "UpdateField"),
-                    boxIfPrimitive(TypeName.get(field.field.asType())) // 确保调用 boxIfPrimitive 方法处理原始类型
-            );
+        // 将 Builder 类添加到 Mutation 类中
+        mutation.addType(builder.build());
 
-            // Getter 方法
-            mutation.addMethod(MethodSpec.methodBuilder("get" + capitalize(fieldName))
-                    .addModifiers(Modifier.PUBLIC)
-                    .returns(fieldType)
-                    .addStatement("return this.$L", fieldName)
-                    .build());
-
-            // Setter 方法
-            mutation.addMethod(MethodSpec.methodBuilder("set" + capitalize(fieldName))
-                    .addModifiers(Modifier.PUBLIC)
-                    .addParameter(fieldType, fieldName)
-                    .addStatement("this.$L = $L", fieldName, fieldName)
-                    .build());
-        }
+        // 新增：生成静态方法 builder()
+        mutation.addMethod(MethodSpec.methodBuilder("builder")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(ClassName.get("", "Builder"))
+                .addStatement("return new $T.Builder()", ClassName.get(packageName, mutationName))
+                .build());
 
         try {
             TypeSpec mutationTypeSpec = mutation.build();
@@ -372,7 +402,7 @@ public class OrmProcessor extends AbstractProcessor {
         String packageName = processingEnv.getElementUtils().getPackageOf(entityType).toString();
         String entityName = entityType.getSimpleName().toString();
         String exprsName = entityName + "Exprs";
-
+        ClassName entityExprsClass = ClassName.get(packageName, exprsName);
 
         // 创建 sealed interface
         TypeSpec.Builder exprsInterfaceBuilder = TypeSpec.interfaceBuilder(exprsName)
@@ -382,12 +412,60 @@ public class OrmProcessor extends AbstractProcessor {
                         .build())
                 .addJavadoc("Generated by OrmProcessor. Do not modify.\n")
                 .addSuperinterface(ClassName.get("com.lvonce.taitan.logic", "FieldExpr"));
-//                .addPermittedSubclasses(permitsList.stream().toList())
-//                .build();
 
-        // 收集字段并构建 records
-        List<TypeSpec> recordList = new ArrayList<>();
+        ClassName fieldExprClassName = ClassName.get("com.lvonce.taitan.logic", "FieldExpr");
+        TypeName fieldExprWildcard = ParameterizedTypeName.get(fieldExprClassName, WildcardTypeName.subtypeOf(Object.class));
 
+        TypeSpec andRecord = TypeSpec.recordBuilder("And")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .addSuperinterface(ClassName.get(packageName, exprsName))
+                .addSuperinterface(ClassName.get("com.lvonce.taitan.logic", "LogicAnd"))
+                .recordConstructor(MethodSpec.constructorBuilder()
+                        .addParameter(ArrayTypeName.of(fieldExprClassName), "exprs")
+                        .build())
+
+                .addMethod(MethodSpec.constructorBuilder()
+                        .addModifiers(Modifier.PUBLIC)
+                        .addParameter(ArrayTypeName.of(ClassName.get(packageName, exprsName)), "exprs")
+                        .varargs(true)
+                        .addStatement("this((com.lvonce.taitan.logic.FieldExpr<?>[]) exprs)")
+                        .build())
+                .addMethod(MethodSpec.methodBuilder("fieldExprs")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(ArrayTypeName.of(fieldExprClassName))
+                        .addStatement("return exprs")
+                        .build())
+                .build();
+        TypeSpec orRecord = TypeSpec.recordBuilder("Or")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .addSuperinterface(ClassName.get(packageName, exprsName))
+                .addSuperinterface(ClassName.get("com.lvonce.taitan.logic", "LogicOr"))
+                .recordConstructor(MethodSpec.constructorBuilder()
+                        .addParameter(ArrayTypeName.of(fieldExprClassName), "exprs")
+                        .build())
+
+                .addMethod(MethodSpec.constructorBuilder()
+                        .addModifiers(Modifier.PUBLIC)
+                        .addParameter(ArrayTypeName.of(ClassName.get(packageName, exprsName)), "exprs")
+                        .varargs(true)
+                        .addStatement("this((com.lvonce.taitan.logic.FieldExpr<?>[]) exprs)")
+                        .build())
+                .addMethod(MethodSpec.methodBuilder("fieldExprs")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(ArrayTypeName.of(fieldExprClassName))
+                        .addStatement("return exprs")
+                        .build())
+                .build();
+        TypeSpec notRecord = createNotRecord(entityExprsClass, fieldExprClassName, fieldExprWildcard);
+
+        exprsInterfaceBuilder.addType(notRecord);
+        exprsInterfaceBuilder.addPermittedSubclass(ClassName.get(packageName,  exprsName).nestedClass(notRecord.name()));
+        exprsInterfaceBuilder.addType(andRecord);
+        exprsInterfaceBuilder.addPermittedSubclass(ClassName.get(packageName,  exprsName).nestedClass(andRecord.name()));
+        exprsInterfaceBuilder.addType(orRecord);
+        exprsInterfaceBuilder.addPermittedSubclass(ClassName.get(packageName,  exprsName).nestedClass(orRecord.name()));
 
         for (Element enclosed : entityType.getEnclosedElements()) {
             if (enclosed.getKind() == ElementKind.FIELD) {
@@ -423,7 +501,7 @@ public class OrmProcessor extends AbstractProcessor {
                                 .returns(ClassName.get("", fieldName))
                                 .addStatement("return new $L($T.EQ, value)", fieldName, ClassName.get("com.lvonce.taitan.logic", "Cmp"))
                                 .build())
-                        .addMethod(MethodSpec.methodBuilder("isNull")
+                        .addMethod(MethodSpec.methodBuilder("isEmpty")
                                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                                 .returns(ClassName.get("", fieldName))
                                 .addStatement("return new $L($T.IS_NULL, null)", fieldName, ClassName.get("com.lvonce.taitan.logic", "Cmp"))
@@ -456,6 +534,49 @@ public class OrmProcessor extends AbstractProcessor {
         } catch (IOException ex) {
             ex.printStackTrace();
         }
+    }
+
+    private CodeBlock generateAndToSqlCode() {
+        return CodeBlock.builder()
+                .add("StringBuilder sb = new StringBuilder();\n")
+                .add("sb.append(\"(\");\n")
+                .add("List<Object> params = new java.util.ArrayList<>();\n")
+                .add("for (int i = 0; i < exprs.size(); i++) {\n")
+                .add("  if (i > 0) sb.append(\" AND \");\n")
+                .add("  com.lvonce.taitan.SqlFragment fragment = exprs.get(i).toSql();\n")
+                .add("  sb.append(fragment.sql());\n")
+                .add("  if (fragment.hasParam()) {\n")
+                .add("    params.add(fragment.param());\n")
+                .add("  }\n")
+                .add("}\n")
+                .add("sb.append(\")\");\n")
+                .add("return new com.lvonce.taitan.SqlFragment(sb.toString(), !params.isEmpty(), params.toArray());\n")
+                .build();
+    }
+
+    private TypeSpec createNotRecord(ClassName entityExprsClass, ClassName fieldExprClass, TypeName fieldExprWildcard) {
+        return TypeSpec.recordBuilder("Not")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .addSuperinterface(entityExprsClass)
+                .addSuperinterface(ClassName.get("com.lvonce.taitan.logic", "LogicNot"))
+                // 主构造函数：FieldExpr<?> inner_expr
+                .recordConstructor(MethodSpec.constructorBuilder()
+                        .addParameter(fieldExprWildcard, "inner_expr")
+                        .build())
+                // 自定义构造函数：支持 UserEntityExprs2 参数
+                .addMethod(MethodSpec.constructorBuilder()
+                        .addModifiers(Modifier.PUBLIC)
+                        .addParameter(entityExprsClass, "expr")
+                        .addStatement("this(($T) expr)", fieldExprClass)
+                        .build())
+                // 实现 fieldExpr() 方法
+                .addMethod(MethodSpec.methodBuilder("fieldExpr")
+                        .addAnnotation(Override.class)
+                        .addModifiers(Modifier.PUBLIC)
+                        .returns(fieldExprWildcard)
+                        .addStatement("return inner_expr")
+                        .build())
+                .build();
     }
 
     private static class FieldInfo {

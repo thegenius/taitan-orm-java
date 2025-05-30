@@ -5,38 +5,38 @@ import com.lvonce.taitan.SqlFragment;
 import java.util.ArrayList;
 import java.util.List;
 
-public record Or(List<FieldExpr> exprs) implements FieldExpr {
-    public Or(FieldExpr... exprs) {
-        this(List.of(exprs));
-    }
+@SuppressWarnings("rawtypes")
+public interface LogicOr extends FieldExpr {
+//    public LogicOr(FieldExpr... exprs) {
+//        this(List.of(exprs));
+//    }
+    FieldExpr<?>[] fieldExprs();
 
-    @Override
-    public String name() {
+    default String name() {
         throw new UnsupportedOperationException("And expressions has no name");
     }
 
-    @Override
-    public Expr<?> expr() {
+    default Expr<?> expr() {
         throw new UnsupportedOperationException("Or expressions don't have a single expr");
     }
 
-    @Override
-    public SqlFragment toSql() {
+
+    default SqlFragment toSql() {
         StringBuilder sb = new StringBuilder();
         sb.append("(");
 
         List<Object> params = new ArrayList<>();
-
-        for (int i = 0; i < exprs.size(); i++) {
+        FieldExpr<?>[] exprArray = fieldExprs();
+        for (int i = 0; i < exprArray.length; i++) {
             if (i > 0) sb.append(" OR ");
-            SqlFragment fragment = exprs.get(i).toSql();
+            SqlFragment fragment = exprArray[i].toSql();
             sb.append(fragment.sql());
             if (fragment.hasParam()) {
-                params.add(fragment.param());
+                params.addAll(fragment.params());
             }
         }
 
         sb.append(")");
-        return new SqlFragment(sb.toString(), !params.isEmpty(), params.toArray());
+        return new SqlFragment(sb.toString(), !params.isEmpty(), params);
     }
 }
